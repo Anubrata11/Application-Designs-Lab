@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Stock Price Prediction</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .file-upload {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .model-select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 8px 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .results {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .chart-container {
+            margin-top: 20px;
+            height: 400px;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .error {
+            color: red;
+            text-align: center;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .upload-status {
+            margin-top: 10px;
+            text-align: center;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Advanced Stock Price Prediction</h1>
+            <p>Upload CSV data and choose prediction model</p>
+        </div>
+
+        <div class="controls">
+            <div class="file-upload">
+                <input type="file" id="csvFile" accept=".csv">
+                <button onclick="uploadFile()" id="uploadBtn">Upload</button>
+            </div>
+            <select class="model-select" id="modelSelect">
+                <option value="linear">Linear Regression</option>
+                <option value="lstm">LSTM</option>
+            </select>
+            <button onclick="predict()" id="predictBtn" disabled>Generate Prediction</button>
+        </div>
+
+        <div class="upload-status" id="uploadStatus"></div>
+        <div class="loading" id="loading">Processing... Please wait.</div>
+        <div class="error" id="error"></div>
+
+        <div class="results" id="results">
+            <h2>Prediction Results</h2>
+            <p>Predicted Price: $<span id="predictedPrice"></span></p>
+            <p>Model Accuracy: <span id="accuracy"></span>%</p>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="priceChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let chart;
+        let currentFileName = '';
+
+        async function uploadFile() {
+            const fileInput = document.getElementById('csvFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showError('Please select a file first');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            showLoading(true);
+            hideError();
+            clearUploadStatus();
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                currentFileName = data.filename;
+                document.getElementById('uploadStatus').textContent = 'File uploaded successfully!';
+                document.getElementById('predictBtn').disabled = false;
+            } catch (error) {
+                showError('Error uploading file: ' + error.message);
+                document.getElementById('predictBtn').disabled = true;
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function predict() {
+            if (!currentFileName) {
+                showError('Please upload a file first');
+                return;
+            }
+
+            const modelType = document.getElementById('modelSelect').value;
+            showLoading(true);
+            hideError();
+            hideResults();
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        filename: currentFileName,
+                        model_type: modelType
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                updateResults(data);
+                updateChart(data);
+                showResults();
+            } catch (error) {
+                showError('Error generating prediction: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function updateResults(data) {
+            document.getElementById('predictedPrice').textContent = 
+                data.prediction.toFixed(2);
+            document.getElementById('accuracy').textContent = 
+                (data.accuracy * 100).toFixed(2);
+        }
+
+        function updateChart(data) {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            
+            if (chart) {
+                chart.destroy();
+            }
+
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.dates,
+                    datasets: [{
+                        label: 'Historical Price',
+                        data: data.historical_data,
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1
+                    }, {
+                        label: 'Predicted Price',
+                        data: [...Array(data.historical_data.length - 1).fill(null), 
+                              data.historical_data[data.historical_data.length - 1],
+                              data.prediction],
+                        borderColor: 'rgb(255, 99, 132)',
+                        borderDash: [5, 5],
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: 'Stock Price ($)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Stock Price History and Prediction'
+                        }
+                    }
+                }
+            });
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function hideError() {
+            document.getElementById('error').style.display = 'none';
+        }
+
+        function clearUploadStatus() {
+            document.getElementById('uploadStatus').textContent = '';
+        }
+
+        function showResults() {
+            document.getElementById('results').style.display = 'block';
+        }
+
+        function hideResults() {
+            document.getElementById('results').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
