@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PDF Q&A Assistant</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 2rem;
+            font-size: 2.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .upload-section, .question-section {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin-bottom: 1.5rem;
+            transition: transform 0.3s ease;
+        }
+
+        .upload-section:hover, .question-section:hover {
+            transform: translateY(-5px);
+        }
+
+        h3 {
+            color: #34495e;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        h3 i {
+            color: #3498db;
+        }
+
+        .file-input-container {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        #pdfFile {
+            flex: 1;
+            padding: 0.5rem;
+            border: 2px dashed #3498db;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .question-input {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        #question {
+            flex: 1;
+            padding: 0.8rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        #question:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        button:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        #response {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            border-radius: 10px;
+            background: #f8f9fa;
+            min-height: 100px;
+            border-left: 4px solid #3498db;
+            position: relative;
+            display: none;
+        }
+
+        #response.active {
+            display: block;
+            animation: slideIn 0.5s ease;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 1rem 0;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .status-message {
+            text-align: center;
+            color: #2ecc71;
+            margin-top: 0.5rem;
+            font-weight: bold;
+            display: none;
+        }
+
+        .status-message.error {
+            color: #e74c3c;
+        }
+
+        .status-message.active {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PDF Q&A Assistant</h1>
+
+        <div class="upload-section">
+            <h3><i class="fas fa-file-pdf"></i> Upload PDF</h3>
+            <div class="file-input-container">
+                <input type="file" id="pdfFile" accept=".pdf">
+                <button onclick="uploadPDF()">
+                    <i class="fas fa-upload"></i>
+                    Upload
+                </button>
+            </div>
+            <div class="status-message" id="uploadStatus"></div>
+        </div>
+
+        <div class="question-section">
+            <h3><i class="fas fa-question-circle"></i> Ask a Question</h3>
+            <div class="question-input">
+                <input type="text" id="question" placeholder="Type your question here...">
+                <button onclick="askQuestion()">
+                    <i class="fas fa-paper-plane"></i>
+                    Ask
+                </button>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Processing your request...</p>
+        </div>
+
+        <div id="response"></div>
+    </div>
+
+    <script>
+        async function uploadPDF() {
+            const fileInput = document.getElementById('pdfFile');
+            const uploadStatus = document.getElementById('uploadStatus');
+            const loading = document.getElementById('loading');
+
+            if (!fileInput.files[0]) {
+                showStatus('Please select a file first', true);
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('pdf', fileInput.files[0]);
+
+            loading.classList.add('active');
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (result.error) {
+                    showStatus(result.error, true);
+                } else {
+                    showStatus(result.message);
+                }
+            } catch (error) {
+                showStatus('Error uploading file', true);
+            } finally {
+                loading.classList.remove('active');
+            }
+        }
+
+        async function askQuestion() {
+            const question = document.getElementById('question').value;
+            const responseDiv = document.getElementById('response');
+            const loading = document.getElementById('loading');
+
+            if (!question) {
+                showStatus('Please enter a question', true);
+                return;
+            }
+
+            loading.classList.add('active');
+            responseDiv.classList.remove('active');
+
+            try {
+                const response = await fetch('/ask', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ question: question })
+                });
+                const result = await response.json();
+
+                responseDiv.innerHTML = result.answer || result.error;
+                responseDiv.classList.add('active');
+            } catch (error) {
+                responseDiv.innerHTML = 'Error getting response';
+                responseDiv.classList.add('active');
+            } finally {
+                loading.classList.remove('active');
+            }
+        }
+
+        function showStatus(message, isError = false) {
+            const statusDiv = document.getElementById('uploadStatus');
+            statusDiv.textContent = message;
+            statusDiv.classList.remove('error');
+            if (isError) {
+                statusDiv.classList.add('error');
+            }
+            statusDiv.classList.add('active');
+            setTimeout(() => {
+                statusDiv.classList.remove('active');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
